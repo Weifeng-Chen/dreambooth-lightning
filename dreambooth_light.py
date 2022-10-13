@@ -221,8 +221,11 @@ class StableDiffusion(pl.LightningModule):
             beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000
         )
 
+        # Important: This property activates manual optimization.
+        # self.automatic_optimization = False
+
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.unet.parameters(),  # only optimize unet
             lr=args.learning_rate,
             betas=(args.adam_beta1, args.adam_beta2),
@@ -258,24 +261,33 @@ class StableDiffusion(pl.LightningModule):
         timesteps = timesteps.long()
         # Add noise to the latents according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
+
         noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
+
+        # # NOTE debug here
+        # noisy_latents = noisy_latents * 0.0
+        # timesteps = timesteps * 0.0
+
         # Get the text embedding for conditioning
         with torch.no_grad():
             encoder_hidden_states = self.text_encoder(batch["input_ids"])[0]
-        # Predict the noise residual
-        # print(noisy_latents.shape, encoder_hidden_states.shape)
-        # noisy_latents = 0 * noisy_latents
         
-        # NOTE 对齐
+        # Predict the noise residual
         noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states).sample
-        # print(noise_pred)
+        
+        # opt = self.optimizers()
+        # lr_scheduler = self.lr_schedulers()
         loss = F.mse_loss(noise_pred, noise, reduction="none").mean([1, 2, 3]).mean()
-        # print(noise_pred.shape, noise.shape)
-
+        # self.manual_backward(loss)
+        # opt.step()
+        # lr_scheduler.step()
+        # opt.zero_grad()
+        self.log("train_loss", loss,  on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss}
     
     def on_train_epoch_end(self):
-        if self.current_epoch % 50 == 0:
+        if self.trainer.global_rank==0 and  self.current_epoch == 49:
+            print('saving model...')
             pipeline = StableDiffusionPipeline.from_pretrained(
                 args.pretrained_model_name_or_path, unet=self.unet
             )
@@ -324,7 +336,7 @@ class DreamBoothDataset(Dataset):
         self.image_transforms = transforms.Compose(
             [
                 transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR),
-                # transforms.CenterCrop(size) if center_crop else transforms.RandomCrop(size),
+                transforms.CenterCrop(size) if center_crop else transforms.RandomCrop(size),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5], [0.5]),
             ]
@@ -341,7 +353,6 @@ class DreamBoothDataset(Dataset):
         batch = {
             "input_ids": input_ids,
             "pixel_values": pixel_values,
-            'filename:': [example['instance_file_name'] for example in examples]
         }
 
         return batch
@@ -361,7 +372,7 @@ class DreamBoothDataset(Dataset):
             truncation=True,
             max_length=self.tokenizer.model_max_length,
         ).input_ids
-        example['instance_file_name'] = self.instance_images_path[index % self.num_instance_images]
+        # example['instance_file_name'] = self.instance_images_path[index % self.num_instance_images]
 
         return example
 
@@ -387,27 +398,29 @@ def main():
         center_crop=args.center_crop,
     )
     
-    print(train_dataset[0])
     train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.train_batch_size, shuffle=False, collate_fn=train_dataset.collate_fn,
+        train_dataset, batch_size=args.train_batch_size, shuffle=True, collate_fn=train_dataset.collate_fn,
     )
-    for each in train_dataloader:
-        print(each)
-        break
-
-    assert 1==2
+    
 
     # checkpoint
     checkpoint_callback = pl.callbacks.ModelCheckpoint(save_on_train_epoch_end=False, 
                                             save_last=True)
 
+    lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='step')
     # training
     trainer = pl.Trainer(
-        gpus=1, 
-        num_nodes=1, 
+        gpus=2, 
+        num_nodes=2, 
         precision=16,
+        # strategy="deepspeed_stage_1",
+        # strategy = pl.strategies.DeepSpeedStrategy(
+        #     stage=3,
+        #     offload_optimizer=True,  # Enable CPU Offloading
+        #     cpu_checkpointing=True,  # (Optional) offload activations to CPU
+        # ),
         max_epochs=args.num_train_epochs,
-        callbacks=[checkpoint_callback],)
+        callbacks=[checkpoint_callback, lr_monitor],)
     trainer.fit(model, train_dataloader)
 
 
