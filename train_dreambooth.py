@@ -331,7 +331,7 @@ def main():
         if cur_class_images < args.num_class_images:
             torch_dtype = torch.float16 if accelerator.device.type == "cuda" else torch.float32
             pipeline = StableDiffusionPipeline.from_pretrained(
-                args.pretrained_model_name_or_path, torch_dtype=torch_dtype
+                args.pretrained_model_name_or_path, torch_dtype=torch.float32
             )
             pipeline.set_progress_bar_config(disable=True)
 

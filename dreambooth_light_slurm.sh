@@ -10,22 +10,6 @@ export MODEL_NAME="../stable-diffusion-v1-4"
 export INSTANCE_DIR="./new_concept_dog"
 export OUTPUT_DIR="./dog"
 
-CONFIG_JSON="./deepspeed.json"
-# Deepspeed figures out GAS dynamically from dynamic GBS via set_train_batch_size()
-cat <<EOT > $CONFIG_JSON
-{
-    "zero_optimization": {
-        "stage": 1
-    },
-    "fp16": {
-        "enabled": true
-    },
-    "gradient_clipping": 2,
-    "train_micro_batch_size_per_gpu": 2
-}
-EOT
-export PL_DEEPSPEED_CONFIG_PATH=$CONFIG_JSON
-### End
 
 eval "$(/home/chenweifeng/anaconda3/bin/conda shell.bash hook)" # init conda
 conda activate ldm

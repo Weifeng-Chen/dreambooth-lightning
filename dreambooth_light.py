@@ -21,9 +21,9 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch.utils.data import Dataset
 
-from accelerate import Accelerator
-from accelerate.logging import get_logger
-from accelerate.utils import set_seed
+# from accelerate import Accelerator
+# from accelerate.logging import get_logger
+# from accelerate.utils import set_seed
 from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from huggingface_hub import HfFolder, Repository, whoami
@@ -413,12 +413,7 @@ def main():
         gpus=2, 
         num_nodes=2, 
         precision=16,
-        # strategy="deepspeed_stage_1",
-        # strategy = pl.strategies.DeepSpeedStrategy(
-        #     stage=3,
-        #     offload_optimizer=True,  # Enable CPU Offloading
-        #     cpu_checkpointing=True,  # (Optional) offload activations to CPU
-        # ),
+        strategy="deepspeed_stage_1",
         max_epochs=args.num_train_epochs,
         callbacks=[checkpoint_callback, lr_monitor],)
     trainer.fit(model, train_dataloader)
